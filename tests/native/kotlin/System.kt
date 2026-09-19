@@ -25,6 +25,6 @@ object Os {
     val a=Files.readAttributes(Path.of(path),BasicFileAttributes::class.java,NOFOLLOW_LINKS)
     StructStat(when {a.isSymbolicLink->0xa000; a.isDirectory->0x4000; a.isRegularFile->0x8000; else->0},a.size(),a.lastModifiedTime().toMillis()/1000)
   }
-  fun unlink(path:String):Unit=io("unlink"){Files.delete(Path.of(path))}
+  fun remove(path:String):Unit=io("remove"){Files.delete(Path.of(path))}
   fun rename(from:String,to:String):Unit=io("rename"){Files.move(Path.of(from),Path.of(to));Unit}
 }

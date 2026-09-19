@@ -31,15 +31,19 @@ java -jar /tmp/snsg-iva002-file-guards.jar
 
 Kotlin Context의 저장 디렉터리와 android.system.Os는 fixture shim이다. Os shim은 실제 JVM File/NIO 실패를 errno로 매핑한다. 실제 Android Os 런타임은 실기 시험이 아니며 Android 빌드에서 API 적합성을 확인한다. 기존 minSdk24는 변경하지 않는다. Swift는 Foundation 파일 API와 unlink를 직접 실행한다.
 권한실패 fixture는 root 실행을 거부한다. Linux의 격리 사용자 및 macOS CI 실행과 실제 폰 수락을 구분한다.
-F001 실패선두10+정상11번째/throw/정상화, F002 100/101 및 미확인205개·같은시각 cursor·이관,
-F003 임시파일과 쓰기중단/용량/active/초기화, F004 열거·metadata·unlink 실패·journal/접근회복을 검사한다.
+F001 실패선두10+정상11번째/throw/정상화, F002 100/101 및미확인205개·같은시각 cursor·이관,
+F003 임시파일과 쓰기중단/용량/active/초기화, F004 열거·metadata·remove/unlink 실패·journal/접근회복을 검사한다.
 
 ## 외부 공식 API 보조 확인
 
 요구사항은 IVA 원문을 따른다. 아래는 구현에 사용하는 API의 오류 계약 보조 근거이며 새 제품 요구가 아니다.
 
-- Android android.system.Os: lstat/unlink/rename (API21+, ErrnoException/ENOENT 구분). https://developer.android.com/reference/android/system/Os
+- Android android.system.Os: lstat/remove/rename (API21+, ErrnoException/ENOENT 구분). https://developer.android.com/reference/android/system/Os
 - Android java.io.File.listFiles: 빈 배열과 null 실패 구분. https://developer.android.com/reference/java/io/File#listFiles()
 - Apple FileManager.attributesOfItem(atPath:): throws 기반 속성 조회. https://developer.apple.com/documentation/foundation/filemanager/attributesofitem(atpath:)
 
 개인사진·원본로그·키를 Git에 저장하지 않는다. 새 서버/OAuth/PMO/페어 검증자를 추가하지 않는다.
+
+## Android SDK 표면 교정
+
+중간 후보9847200c의 CI35438877502에서 Android 공개 SDK에 없는 Os.unlink 호출이 컴파일 오류로 확인됐다. 공개 API21+ Os.remove와 전후 lstat 확인으로 교정하고 JVM shim도 동일 이름으로 정정했다. Kotlin fixture는 실제 Android SDK 적합성을 대신하지 않는다. 기존 오류/부재 구분과 journal 보호는 유지하며 iOS POSIX unlink는 변경하지 않는다.

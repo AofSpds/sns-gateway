@@ -87,8 +87,10 @@ internal object LocalManagedFiles {
     val used = inventory(c).sumOf { (it["bytes"] as Number).toLong() }
     require(used >= 0 && used <= 524_288_000 - extra) { "LOCAL_STORAGE_FULL" }
   }
-  private fun unlinkConfirmed(file: File) {
-    try { Os.unlink(file.path) }
+  private fun removeConfirmed(file: File) {
+    val entry = attributes(file)
+    require(entry == null || regular(entry)) { "NOT_A_REGULAR_FILE" }
+    try { Os.remove(file.path) }
     catch (error: ErrnoException) { if (error.errno != OsConstants.ENOENT) throw error }
     if (attributes(file) != null) throw IOException("DELETE_NOT_CONFIRMED")
   }
@@ -104,7 +106,7 @@ internal object LocalManagedFiles {
       if (!temporary.createNewFile()) throw IOException("TEMP_ALREADY_EXISTS")
       return write(temporary)
     } finally {
-      try { unlinkConfirmed(temporary) } finally { activeImports.remove(temporary) }
+      try { removeConfirmed(temporary) } finally { activeImports.remove(temporary) }
     }
   }
   @Synchronized fun storePhoto(c: Context, hash: String, bytes: ByteArray): File {
@@ -120,7 +122,7 @@ internal object LocalManagedFiles {
     require(uris.size <= 100 && uris.distinct().size == uris.size)
     val files = uris.map { permitted(c, it) } // Validate every path and metadata before any mutation.
     require(files.none { activeImports.contains(it.path) }) { "IMPORT_IN_PROGRESS" }
-    files.forEach { unlinkConfirmed(it.path) }
+    files.forEach { removeConfirmed(it.path) }
     // Never recursively remove parent folders. An empty directory has no photo content.
     return uris.toList()
   }
