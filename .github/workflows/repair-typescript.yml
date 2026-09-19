@@ -1,0 +1,36 @@
+name: Repair SDK TypeScript compatibility
+on:
+  push:
+    branches: [work/sdk-compatibility-fix]
+permissions:
+  contents: write
+jobs:
+  repair:
+    if: github.repository == 'AofSpds/sns-gateway'
+    runs-on: ubuntu-latest
+    env:
+      EXPO_NO_TELEMETRY: '1'
+      CI: '1'
+      NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+      EXPECTED_HEAD: 9053185dc39c371da997aceafc00a95a48164f58
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 9053185dc39c371da997aceafc00a95a48164f58
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Correct the actual SDK compatibility finding only
+        run: |
+          npm ci --ignore-scripts
+          npm install --save-dev --save-exact typescript@6.0.3 --ignore-scripts --no-audit --no-fund
+          npx expo install --check
+          git diff --check
+          remote=$(git ls-remote origin refs/heads/work/sns-gateway-v0.1 | cut -f1)
+          test "$remote" = "$EXPECTED_HEAD" || { echo 'Product branch moved; refusing write'; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json
+          git commit -m 'fix: align TypeScript with Expo SDK compatibility requirement'
+          git push origin HEAD:refs/heads/work/sns-gateway-v0.1
