@@ -44,12 +44,7 @@ internal class LocalPhotos(private val context: Context) {
         }
         val bytes = try { ByteArrayOutputStream().use { out -> check(bitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)); out.toByteArray() } } finally { bitmap.recycle() }
         require(bytes.size in 3..10485760)
-        val file = File(root(), hash(bytes) + ".jpg")
-        if (!file.exists()) {
-          LocalManagedFiles.requireSpace(context, bytes.size.toLong())
-          val temporary = File(root(), UUID.randomUUID().toString() + ".tmp")
-          try { temporary.writeBytes(bytes); check(temporary.renameTo(file)) } finally { temporary.delete() }
-        }
+        val file = LocalManagedFiles.storePhoto(context, hash(bytes), bytes)
         photos.add(record(file))
       } catch (_: Exception) { skipped++ }
     }

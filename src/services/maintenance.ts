@@ -15,7 +15,7 @@ export async function resumeDeletions(): Promise<void> {
   for (let i = 0; i < rows.length; i += 100) {
     const group = rows.slice(i, i + 100);
     const removed = await platformBridge().deleteManagedFiles(group.map(r => r.uri));
-    if (removed.some(uri => !group.some(row => row.uri === uri))) throw new Error('INVALID_DELETE_RESULT');
+    if (new Set(removed).size !== removed.length || removed.some(uri => !group.some(row => row.uri === uri))) throw new Error('INVALID_DELETE_RESULT');
     await db.withExclusiveTransactionAsync(async t => {
       for (const uri of removed) {
         await t.runAsync('UPDATE file_deletions SET done_at=? WHERE uri=?', Date.now(), uri);
@@ -58,6 +58,10 @@ export async function collectExpired(): Promise<number> {
     if (mayPurgeInbox({ discardedAt: asset.decided_at, days, attempts: await resolutions(asset.id) }, now)) selected.push({uri: asset.uri, assetId: asset.id});
   }
   const managed = await platformBridge().managedFiles();
+  // Interrupted Android import files never went to a receiver. Wait one hour and never remove a live writer.
+  for (const file of managed.filter((f: ManagedFile) => f.kind === 'IMPORT_TEMP')) {
+    if (!file.active && Number.isSafeInteger(file.modifiedAt) && file.modifiedAt >= 0 && file.modifiedAt <= now - 3_600_000) selected.push({uri: file.uri, assetId: null});
+  }
   for (const file of managed.filter((f: ManagedFile) => f.kind === 'STAGING')) {
     const attempts = await db.getAllAsync<Resolution>(`SELECT s.state,r.resolved_at AS resolvedAt FROM batches b
       JOIN share_attempts s ON s.batch_id=b.id LEFT JOIN attempt_resolution r ON r.attempt_id=s.id,
@@ -79,11 +83,17 @@ export async function resetLocalData(): Promise<void> {
   // Idempotent reset journal survives an interrupted deletion, and never touches originals.
   await platformBridge().setReminder(false, 9, 0);
   await platformBridge().disconnectSource();
-  const files = await platformBridge().managedFiles();
-  for (let i = 0; i < files.length; i += 100) {
-    const group = files.slice(i, i + 100).map(f => f.uri);
-    const removed = await platformBridge().deleteManagedFiles(group);
-    if (removed.length !== group.length || removed.some(uri => !group.includes(uri))) throw new Error('RESET_INCOMPLETE');
-  }
-  await db.withExclusiveTransactionAsync(async t => { await t.execAsync(RESET_ROWS); });
+  const files = await platformBridge().managedFiles(); // A native enumeration/metadata error must throw.
+  if (files.some(f => f.active)) throw new Error('IMPORT_IN_PROGRESS');
+  // Retain DB-known paths too. An empty inventory cannot erase the evidence of an unconfirmed deletion.
+  const known = await db.getAllAsync<{uri: string}>(`SELECT uri FROM inbox_assets UNION SELECT uri FROM file_deletions
+    UNION SELECT j.value AS uri FROM batches b,json_each(b.files_json) j`);
+  const paths = [...new Set([...files.map(f => f.uri), ...known.map(f => f.uri)])];
+  await db.withExclusiveTransactionAsync(async t => {
+    for (const uri of paths) await t.runAsync('INSERT INTO file_deletions VALUES (?,NULL,?,NULL) ON CONFLICT(uri) DO UPDATE SET done_at=NULL', uri, Date.now());
+  });
+  await resumeDeletions();
+  // Never clear reset_pending/DB until a second COMPLETE inventory proves no managed content remains.
+  if ((await platformBridge().managedFiles()).length) throw new Error('RESET_INCOMPLETE');
+  await db.withExclusiveTransactionAsync(async t => { await t.execAsync('DELETE FROM source_retry_attempts;' + RESET_ROWS); });
 }

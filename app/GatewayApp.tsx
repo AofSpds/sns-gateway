@@ -6,7 +6,7 @@ import { dayWindow, selectToday } from '../src/domain/planning';
 import { dateInstant, shiftDate, validateReminderContext } from '../src/domain/lifecycle';
 import { movePhoto } from '../src/domain/inbox';
 import { labels } from '../src/domain/sharing';
-import { listHistory, markUserOutcome, type HistoryRow } from '../src/storage/history';
+import { listHistoryPage, markUserOutcome, type HistoryRow, type HistoryFilter, type HistoryCursor } from '../src/storage/history';
 import { listAssets, registerPhotos, type AssetRow } from '../src/storage/inbox';
 import { archiveDay, loadDay, saveDay, listDays, type DailyDraft } from '../src/storage/lifecycle';
 import { connectSource, syncSource, type SourceStatus } from '../src/services/sources';
@@ -32,6 +32,17 @@ export default function GatewayApp() {
   const [dateInput, setDateInput] = useState(day.serviceDate);
   const [provider, setProvider] = useState<ProviderId>('instagram'); const currentProvider = useRef<ProviderId>('instagram');
   const [history, setHistory] = useState<HistoryRow[]>([]);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('UNRESOLVED');
+  const historyFilterRef = useRef<HistoryFilter>('UNRESOLVED');
+  const [historyNext, setHistoryNext] = useState<HistoryCursor | null>(null);
+  const historyCursorRef = useRef<HistoryCursor | null>(null);
+  const [historyTotal, setHistoryTotal] = useState(0);
+  async function refreshHistory(append = false, filter: HistoryFilter = historyFilterRef.current) {
+    const page = await listHistoryPage({ filter, cursor: append ? historyCursorRef.current : null });
+    historyFilterRef.current = filter; historyCursorRef.current = page.next;
+    setHistoryFilter(filter); setHistoryNext(page.next); setHistoryTotal(page.total);
+    setHistory(rows => append ? [...rows, ...page.rows.filter(row => !rows.some(old => old.id === row.id))] : page.rows);
+  }
   const [days, setDays] = useState<{service_date: string; head_revision: number; archived_at: number | null}[]>([]);
   const [reminder, setReminder] = useState<ReminderStatus | null>(null);
   const [pending, setPending] = useState<ReminderContext | null>(null);
@@ -63,7 +74,7 @@ export default function GatewayApp() {
     // Source import can recreate a previously purged identical hash. Replay its tombstone before listing.
     await resumeDeletions();
     const alarm = await platformBridge().reminderStatus();
-    setAssets(await listAssets(currentProvider.current)); setHistory(await listHistory()); setDays(await listDays()); setReminder(alarm);
+    setAssets(await listAssets(currentProvider.current)); await refreshHistory(); setDays(await listDays()); setReminder(alarm);
     setBytes((await platformBridge().managedFiles()).reduce((n, file) => n + file.bytes, 0));
     setPending(validateReminderContext(await platformBridge().pendingReminder()) as ReminderContext | null);
     if (!initialized.current) { showDay(await loadDay(dayWindow(Date.now()).serviceDate)); setHour(String(alarm.hour)); setMinute(String(alarm.minute)); initialized.current = true; }
@@ -181,13 +192,18 @@ export default function GatewayApp() {
       {tab === '이력' && <>
         <Panel title="날짜별 보존 묶음">{days.map(d=><Action key={d.service_date} title={`${d.service_date} · 버전 ${d.head_revision}${d.archived_at?' · 닫힘':''}`} disabled={busy} onPress={()=>{void run(()=>openDate(d.service_date));}}/>)}</Panel>
         <Panel title="공유 이력 · 원격 게시 확인 아님">
+          <Text style={styles.text}>{historyFilter === 'UNRESOLVED' ? '미확인·오류 이력' : '전체 이력'} · {history.length} / {historyTotal}건. 오래된 기록도 조회할 수 있습니다.</Text>
+          <Action title="미확인·오류 이력 모두 보기" disabled={busy} onPress={()=>{void run(()=>refreshHistory(false,'UNRESOLVED'));}}/>
+          <Action title="전체 이력 처음부터" disabled={busy} onPress={()=>{void run(()=>refreshHistory(false,'ALL'));}}/>
+          {!history.length && <Text style={styles.text}>현재 필터에 해당하는 이력이 없습니다.</Text>}
           {history.map(row=><View key={row.id} style={styles.history}>
             <Text style={styles.heading}>{row.intended_target} · {row.service_date??'이전/시험 묶음'} · 버전 {row.revision??'-'}</Text>
             <Text style={styles.text}>{labels[row.state]} · {row.evidence}</Text><Text>관측 대상: {row.observed_target??'알 수 없음'}</Text>
             <Text style={styles.text}>당시 문구: {row.caption}</Text>
-            <Action title="게시했다고 표시 (사용자 진술)" disabled={busy||row.state==='REQUESTED'} onPress={()=>{void run(async()=>{await markUserOutcome(row,true);await refresh(false);});}}/>
-            <Action title="취소했다고 표시" disabled={busy||row.state==='REQUESTED'} onPress={()=>{void run(async()=>{await markUserOutcome(row,false);await refresh(false);});}}/>
+            <Action title="게시했다고 표시 (사용자 진술)" disabled={busy||row.state==='REQUESTED'} onPress={()=>{void run(async()=>{await markUserOutcome(row,true);setAssets(await listAssets(currentProvider.current));await refreshHistory();});}}/>
+            <Action title="취소했다고 표시" disabled={busy||row.state==='REQUESTED'} onPress={()=>{void run(async()=>{await markUserOutcome(row,false);setAssets(await listAssets(currentProvider.current));await refreshHistory();});}}/>
           </View>)}
+          {historyNext && <Action title="이전 기록 더 보기 (최대 100건)" disabled={busy} onPress={()=>{void run(()=>refreshHistory(true));}}/>}
         </Panel>
       </>}
       {tab === '설정' && <>

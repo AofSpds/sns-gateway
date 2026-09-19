@@ -48,9 +48,35 @@ export async function acceptScan(scan: SourceScan): Promise<{ baseline: boolean;
     // Keep all seen identities, including removed/re-added items. Failed imports remain pending.
     for (const key of scan.items) await t.runAsync('INSERT OR IGNORE INTO source_entries VALUES (?,?,?,?,NULL)', scan.sourceId, key, now, baseline ? 'BASELINE' : 'PENDING');
   });
-  const rows = await db.getAllAsync<{ entry_key: string }>(`SELECT entry_key FROM source_entries WHERE source_id=? AND state='PENDING'
-    AND entry_key IN (SELECT value FROM json_each(?)) ORDER BY first_observed_at,entry_key`, scan.sourceId, JSON.stringify(scan.items));
-  return { baseline, pending: rows.map(r => r.entry_key) };
+  const pending = await pendingSourceKeys(db, scan.sourceId, scan.items);
+  return { baseline, pending };
+}
+async function pendingSourceKeys(db: Awaited<ReturnType<typeof database>>, sourceId: string, present: string[]) {
+  const rows = await db.getAllAsync<{entry_key: string}>(`SELECT e.entry_key FROM source_entries e
+    LEFT JOIN source_retry_attempts r ON r.source_id=e.source_id AND r.entry_key=e.entry_key
+    WHERE e.source_id=? AND e.state='PENDING' AND e.entry_key IN (SELECT value FROM json_each(?))
+    ORDER BY COALESCE(r.last_attempt_order,0),e.first_observed_at,e.entry_key`, sourceId, JSON.stringify(present));
+  return rows.map(r => r.entry_key);
+}
+// Record selection BEFORE native I/O. Even a thrown/interrupted import advances its turn.
+export async function claimSourceTurn(scan: SourceScan): Promise<string[]> {
+  validateScan(scan); const db = await database(); let keys: string[] = [];
+  await db.withExclusiveTransactionAsync(async t => {
+    keys = (await pendingSourceKeys(t, scan.sourceId, scan.items)).slice(0, 10);
+    const previous = await t.getFirstAsync<{rank: number}>('SELECT COALESCE(MAX(last_attempt_order),0) AS rank FROM source_retry_attempts WHERE source_id=?', scan.sourceId);
+    const rank = (previous?.rank ?? 0) + 1;
+    if (!Number.isSafeInteger(rank)) throw new Error('RETRY_ORDER_EXHAUSTED');
+    for (const key of keys) await t.runAsync(`INSERT INTO source_retry_attempts VALUES (?,?,1,?,?,'STARTED')
+      ON CONFLICT(source_id,entry_key) DO UPDATE SET attempt_count=attempt_count+1,last_attempt_order=excluded.last_attempt_order,
+      last_attempt_at=excluded.last_attempt_at,outcome='STARTED'`, scan.sourceId, key, rank, Date.now());
+  });
+  return keys;
+}
+export async function finishSourceTurn(sourceId: string, keys: string[], outcome: 'SKIPPED' | 'ERROR') {
+  await (await database()).withExclusiveTransactionAsync(async t => {
+    for (const key of keys) await t.runAsync(`UPDATE source_retry_attempts SET outcome=? WHERE source_id=? AND entry_key=?
+      AND EXISTS (SELECT 1 FROM source_entries e WHERE e.source_id=? AND e.entry_key=? AND e.state='PENDING')`, outcome, sourceId, key, sourceId, key);
+  });
 }
 export async function acceptSourceImports(sourceId: string, records: { entryKey: string; photo: ImportedPhoto }[]) {
   for (const record of records) validateImportedPhoto(record.photo);
@@ -61,6 +87,7 @@ export async function acceptSourceImports(sourceId: string, records: { entryKey:
       // Unknown membership date stays unknown even when import succeeds today.
       await t.runAsync("INSERT OR IGNORE INTO inbox_assets VALUES (?,?,?,?,?,NULL,'FIRST_OBSERVED')", photo.id, photo.uri, photo.bytes, photo.width, photo.height);
       await t.runAsync("UPDATE source_entries SET state='IMPORTED',asset_id=? WHERE source_id=? AND entry_key=?", photo.id, sourceId, entryKey);
+      await t.runAsync("UPDATE source_retry_attempts SET outcome='IMPORTED' WHERE source_id=? AND entry_key=?", sourceId, entryKey);
     }
   });
 }

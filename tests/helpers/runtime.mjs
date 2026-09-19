@@ -6,10 +6,11 @@ import { DatabaseSync } from 'node:sqlite';
 import { SCHEMA } from '../../src/storage/schema.ts';
 import { MIGRATION_2 } from '../../src/storage/migration2.ts';
 import { MIGRATION_3 } from '../../src/storage/migration3.ts';
+import { MIGRATION_4 } from '../../src/storage/migration4.ts';
 
 // Execute exact application TS with only SQLite/native I/O boundaries substituted.
-export async function harness(entry, native = {}) {
-  const sql = new DatabaseSync(':memory:'); sql.exec(SCHEMA); sql.exec(MIGRATION_2); sql.exec(MIGRATION_3);
+export async function harness(entry, native = {}, version = 4) {
+  const sql = new DatabaseSync(':memory:'); sql.exec(SCHEMA); if(version>=2)sql.exec(MIGRATION_2); if(version>=3)sql.exec(MIGRATION_3); if(version>=4)sql.exec(MIGRATION_4);
   const db = {
     async getFirstAsync(text, ...args) { return sql.prepare(text).get(...args) ?? null; },
     async getAllAsync(text, ...args) { return sql.prepare(text).all(...args); },
@@ -38,7 +39,7 @@ export async function harness(entry, native = {}) {
     return module;
   }
   const module = await load(resolve(entry)); await module.evaluate();
-  return { api:module.namespace, sql, db, bridge, close:()=>sql.close() };
+  return { api:module.namespace, sql, db, bridge, load:async entry=>{const next=await load(resolve(entry));await next.evaluate();return next.namespace;}, close:()=>sql.close() };
 }
 export function asset(sql, id='a'.repeat(64)) {
   const photo={id,uri:`file:///fixture/inbox/${id}.jpg`,bytes:1000,width:400,height:400};

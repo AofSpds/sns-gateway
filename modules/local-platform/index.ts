@@ -3,7 +3,7 @@ import type { NativeResult } from '../../src/domain/sharing';
 import type { SourceScan } from '../../src/domain/lifecycle';
 import type { ImportResult, ImportedPhoto } from '../../src/domain/inbox';
 export type ReminderStatus = { enabled: boolean; permitted: boolean; hour: number; minute: number; nextAt: number | null; precision: string };
-export type ManagedFile = { uri: string; kind: 'INBOX' | 'STAGING'; bytes: number; modifiedAt: number };
+export type ManagedFile = { uri: string; kind: 'INBOX' | 'STAGING' | 'IMPORT_TEMP'; bytes: number; modifiedAt: number; active?: boolean };
 export type ReminderContext = { token: string; serviceDate: string; basis: 'SCHEDULED_DATE' | 'DELIVERY_DATE' };
 export type Fixture = { uri: string; label: string };
 type Bridge = {

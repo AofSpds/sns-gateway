@@ -103,6 +103,8 @@ jobs:
         run: |
           swiftc modules/local-platform/ios/LocalManagedFiles.swift tests/native/ManagedFilesSmoke.swift -o /tmp/snsg-file-guards
           /tmp/snsg-file-guards
+          swiftc modules/local-platform/ios/LocalManagedFiles.swift tests/native/ManagedFileRegressions.swift -o /tmp/snsg-iva002-file-guards
+          /tmp/snsg-iva002-file-guards
       - run: npx expo prebuild --platform ios --no-install
       - run: cd ios && pod install
       - name: Unsigned simulator compile (no Apple account)

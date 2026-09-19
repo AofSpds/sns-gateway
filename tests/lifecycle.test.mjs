@@ -85,14 +85,14 @@ test('delete journal survives file failure and suppresses photo resurrection',as
  assert.ok(h.sql.prepare('SELECT done_at FROM file_deletions WHERE uri=?').get(photo.uri).done_at);h.close();
 });
 test('reset blocks unknown shares; reset journal resumes after deletion failure',async()=>{
- let fail=true;const calls=[];const h=await harness('src/services/maintenance.ts',{
+ let fail=true;let deleted=false;const calls=[];const h=await harness('src/services/maintenance.ts',{
   setReminder:async enabled=>{calls.push(['reminder',enabled]);},disconnectSource:async()=>{calls.push(['disconnect']);},
-  managedFiles:async()=>[{uri:`file:///fixture/inbox/${a}.jpg`,kind:'INBOX',bytes:1000,modifiedAt:now}],deleteManagedFiles:async uris=>fail?[]:uris,
+  managedFiles:async()=>deleted?[]:[{uri:`file:///fixture/inbox/${a}.jpg`,kind:'INBOX',bytes:1000,modifiedAt:now}],deleteManagedFiles:async uris=>{if(fail)return[];deleted=true;return uris;},
  });asset(h.sql);
  h.sql.prepare('INSERT INTO batches VALUES (?,?,?,?,?)').run('b','x','[]',now,'LOCAL_INBOX');h.sql.prepare('INSERT INTO share_attempts VALUES (?,?,?,?,?,?,?)').run('s','b','instagram',null,now,'HANDOFF_UNCONFIRMED','OS_SIGNAL');
  await assert.rejects(h.api.resetLocalData(),/UNCONFIRMED/);assert.equal(calls.length,0);
- h.sql.exec("UPDATE share_attempts SET state='USER_REPORTED_CANCELLED'");await assert.rejects(h.api.resetLocalData(),/RESET_INCOMPLETE/);assert.equal(await h.api.resetPending(),true);
- fail=false;await h.api.resetLocalData();assert.equal(await h.api.resetPending(),false);assert.equal(h.sql.prepare('SELECT count(*) AS n FROM inbox_assets').get().n,0);assert.equal(h.sql.prepare('SELECT version FROM schema_meta').get().version,3);h.close();
+ h.sql.exec("UPDATE share_attempts SET state='USER_REPORTED_CANCELLED'");await assert.rejects(h.api.resetLocalData(),/DELETE_INCOMPLETE/);assert.equal(await h.api.resetPending(),true);
+ fail=false;await h.api.resetLocalData();assert.equal(await h.api.resetPending(),false);assert.equal(h.sql.prepare('SELECT count(*) AS n FROM inbox_assets').get().n,0);assert.equal(h.sql.prepare('SELECT version FROM schema_meta').get().version,4);h.close();
 });
 
 test('old global caption stays available as the initial daily template',async()=>{
