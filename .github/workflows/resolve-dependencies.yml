@@ -1,0 +1,68 @@
+name: Resolve initial SDK lockfile
+on:
+  push:
+    branches: ['work/sns-gateway-v0.1']
+    paths: ['package.json', '.github/workflows/resolve-dependencies.yml']
+permissions:
+  contents: read
+concurrency:
+  group: snsg-initial-lock
+  cancel-in-progress: false
+jobs:
+  resolve:
+    if: github.repository == 'AofSpds/sns-gateway'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+      EXPO_NO_TELEMETRY: '1'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+          registry-url: 'https://registry.npmjs.org'
+      - name: Resolve once, pin direct versions and commit only dependency files
+        env:
+          EXPECTED_HEAD: ${{ github.sha }}
+        run: |
+          if test -f package-lock.json; then
+            echo 'Lockfile already exists; no dependency mutation.'
+            exit 0
+          fi
+          npm install --ignore-scripts --no-audit --no-fund
+          node <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const bundled = JSON.parse(fs.readFileSync('node_modules/expo/bundledNativeModules.json', 'utf8'));
+          for (const name of Object.keys(p.dependencies)) {
+            if (bundled[name]) p.dependencies[name] = bundled[name];
+          }
+          fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+          NODE
+          npm install --ignore-scripts --no-audit --no-fund
+          node <<'NODE'
+          const fs = require('fs');
+          const p = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+          const lock = JSON.parse(fs.readFileSync('package-lock.json', 'utf8'));
+          for (const section of ['dependencies', 'devDependencies']) {
+            for (const name of Object.keys(p[section] || {})) {
+              const v = lock.packages['node_modules/' + name]?.version;
+              if (!v || /(?:canary|preview|beta|alpha|rc)/i.test(v)) throw new Error('Unstable/missing version: ' + name);
+              p[section][name] = v;
+            }
+          }
+          fs.writeFileSync('package.json', JSON.stringify(p, null, 2) + '\n');
+          NODE
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          remote=$(git ls-remote origin refs/heads/work/sns-gateway-v0.1 | cut -f1)
+          test "$remote" = "$EXPECTED_HEAD" || { echo 'Branch moved; refusing write'; exit 1; }
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add package.json package-lock.json
+          git diff --cached --check
+          git commit -m 'build: lock stable Expo SDK dependency graph'
+          git push origin HEAD:refs/heads/work/sns-gateway-v0.1
