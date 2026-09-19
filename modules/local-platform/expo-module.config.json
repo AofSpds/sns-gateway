@@ -1,0 +1,19 @@
+{
+  "platforms": [
+    "apple",
+    "android"
+  ],
+  "apple": {
+    "modules": [
+      "LocalPlatformModule"
+    ],
+    "appDelegateSubscribers": [
+      "ReminderLifecycle"
+    ]
+  },
+  "android": {
+    "modules": [
+      "expo.modules.localplatform.LocalPlatformModule"
+    ]
+  }
+}

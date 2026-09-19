@@ -1,0 +1,34 @@
+{
+  "name": "sns-gateway",
+  "version": "0.1.0",
+  "private": true,
+  "main": "index.ts",
+  "engines": {
+    "node": ">=22.13.0 <25"
+  },
+  "scripts": {
+    "start": "expo start --dev-client --localhost",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "lint": "eslint app src modules tests index.ts App.tsx app.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-vm-modules --experimental-strip-types --test tests/*.test.mjs",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "bundle": "expo export --platform all --output-dir dist",
+    "prebuild": "expo prebuild --no-install"
+  },
+  "dependencies": {
+    "expo": "57.0.24",
+    "expo-dev-client": "57.0.19",
+    "expo-sqlite": "57.0.3",
+    "react": "19.2.3",
+    "react-native": "0.86.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.4",
+    "@types/react": "19.2.18",
+    "eslint": "9.39.5",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.70.0"
+  }
+}
