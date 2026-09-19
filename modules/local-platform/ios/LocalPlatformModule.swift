@@ -1,9 +1,12 @@
 import ExpoModulesCore
 import UIKit
 import ImageIO
+import Photos
+import PhotosUI
 
 public class LocalPlatformModule: Module {
   private var sharing = false
+  private var photoPicker: LocalPhotoPicker?
 
   private func root() throws -> URL {
     let cache = try FileManager.default.url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
@@ -37,6 +40,40 @@ public class LocalPlatformModule: Module {
 
   public func definition() -> ModuleDefinition {
     Name("LocalPlatform")
+
+    AsyncFunction("pickPhotos") { (promise: Promise) in
+      guard self.photoPicker == nil, UIApplication.shared.applicationState == .active, let presenter = self.presenter() else {
+        promise.reject("FOREGROUND_REQUIRED", "Open the app before choosing photos."); return
+      }
+      PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
+        DispatchQueue.main.async {
+          guard status == .authorized || status == .limited else { promise.reject("PHOTO_PERMISSION_REQUIRED", "Allow selected photos in Settings."); return }
+          let helper = LocalPhotoPicker { photos, skipped in
+            self.photoPicker = nil
+            promise.resolve(["photos": photos, "skipped": skipped])
+          }
+          self.photoPicker = helper
+          var config = PHPickerConfiguration(photoLibrary: .shared())
+          config.selectionLimit = 10; config.filter = .images; config.preferredAssetRepresentationMode = .current
+          let picker = PHPickerViewController(configuration: config); picker.delegate = helper
+          presenter.present(picker, animated: true)
+        }
+      }
+    }.runOnQueue(.main)
+    AsyncFunction("inventoryPhotos") { () throws -> [[String: Any]] in try LocalPhotoPicker.inventory() }
+    AsyncFunction("stagePhotos") { (paths: [String]) throws -> [String] in try LocalPhotoPicker.stage(paths) }
+    AsyncFunction("reminderStatus") { (promise: Promise) in LocalReminders.status { promise.resolve($0) } }
+    AsyncFunction("setReminder") { (enabled: Bool, hour: Int, minute: Int, promise: Promise) in
+      LocalReminders.configure(enabled, hour, minute) { value, error in
+        if error != nil { promise.reject("REMINDER_FAILED", "Check notification settings.") } else { promise.resolve(value) }
+      }
+    }
+    AsyncFunction("testReminder") { (promise: Promise) in
+      LocalReminders.testOnce { error in
+        if error != nil { promise.reject("REMINDER_FAILED", "Allow notifications first.") } else { promise.resolve(nil) }
+      }
+    }
+
 
     AsyncFunction("storageDirectory") { () throws -> String in
       var folder = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)

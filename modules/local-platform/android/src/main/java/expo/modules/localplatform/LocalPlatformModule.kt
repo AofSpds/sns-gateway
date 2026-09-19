@@ -21,6 +21,8 @@ import java.net.URI
 import java.util.UUID
 
 class LocalPlatformModule : Module() {
+  private var pickerPromise: Promise? = null
+  private val pickerCode = 59311
   private fun context(): Context = requireNotNull(appContext.reactContext) { "CONTEXT_UNAVAILABLE" }
   private fun root(): File = File(context().cacheDir, "sns-gateway/share").apply { mkdirs() }.canonicalFile
 
@@ -36,6 +38,47 @@ class LocalPlatformModule : Module() {
 
   override fun definition() = ModuleDefinition {
     Name("LocalPlatform")
+
+    AsyncFunction("pickPhotos") { promise: Promise ->
+      try {
+        check(pickerPromise == null) { "PICKER_BUSY" }
+        val activity = requireNotNull(appContext.currentActivity)
+        pickerPromise = promise
+        val intent = Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
+          type = "image/*"; addCategory(Intent.CATEGORY_OPENABLE)
+          putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true); putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+          addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        activity.startActivityForResult(intent, pickerCode)
+      } catch (_: Exception) { pickerPromise = null; promise.reject("PICKER_FAILED", "Open the app and select local photos.", null) }
+    }.runOnQueue(Queues.MAIN)
+
+    OnActivityResult { _, payload ->
+      if (payload.requestCode == pickerCode) {
+        val promise = pickerPromise
+        pickerPromise = null
+        if (promise != null) {
+          if (payload.resultCode != android.app.Activity.RESULT_OK) promise.resolve(mapOf("photos" to emptyList<Any>(), "skipped" to 0))
+          else {
+            val data = payload.data
+            val uris = data?.clipData?.let { clip -> (0 until clip.itemCount).map { clip.getItemAt(it).uri } } ?: listOfNotNull(data?.data)
+            val ctx = context()
+            Thread {
+              try { promise.resolve(LocalPhotos(ctx).importPhotos(uris)) }
+              catch (_: Exception) { promise.reject("IMPORT_FAILED", "Choose 1 to 10 local images.", null) }
+            }.start()
+          }
+        }
+      }
+    }
+    OnDestroy { pickerPromise?.reject("PICKER_INTERRUPTED", "Open the app again.", null); pickerPromise = null }
+    AsyncFunction("inventoryPhotos") { LocalPhotos(context()).inventory() }
+    AsyncFunction("stagePhotos") { paths: List<String> -> LocalPhotos(context()).stage(paths) }
+    AsyncFunction("reminderStatus") { LocalReminders.status(context()) }
+    AsyncFunction("setReminder") { enabled: Boolean, hour: Int, minute: Int -> LocalReminders.set(context(), enabled, hour, minute) }
+    AsyncFunction("testReminder") { LocalReminders.test(context()) }
+    OnActivityEntersForeground { try { LocalReminders.refresh(context()) } catch (_: Exception) { } }
+
 
     AsyncFunction("storageDirectory") {
       val directory = File(context().noBackupFilesDir, "sns-gateway/db")
