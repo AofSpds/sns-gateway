@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "main": "index.ts",
-  "engines": { "node": ">=22.13.0 <25" },
+  "engines": {
+    "node": ">=22.13.0 <25"
+  },
   "scripts": {
     "start": "expo start --dev-client --localhost",
     "android": "expo run:android",
@@ -16,17 +18,17 @@
     "prebuild": "expo prebuild --no-install"
   },
   "dependencies": {
-    "expo": "~57.0.0",
-    "expo-dev-client": "~57.0.0",
-    "expo-sqlite": "~57.0.0",
+    "expo": "57.0.24",
+    "expo-dev-client": "57.0.19",
+    "expo-sqlite": "57.0.3",
     "react": "19.2.3",
-    "react-native": "0.86.0"
+    "react-native": "0.86.3"
   },
   "devDependencies": {
-    "@types/react": "~19.2.0",
-    "@types/node": "^22.0.0",
-    "typescript": "~5.9.2",
-    "eslint": "^9.39.1",
-    "typescript-eslint": "^8.45.0"
+    "@types/react": "19.2.18",
+    "@types/node": "22.20.4",
+    "typescript": "5.9.3",
+    "eslint": "9.39.5",
+    "typescript-eslint": "8.70.0"
   }
 }
