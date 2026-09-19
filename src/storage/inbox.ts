@@ -1,5 +1,5 @@
 import { database } from './history';
-import { INBOX_QUERY } from './migration2';
+import { ACTIVE_INBOX_QUERY } from './migration3';
 import { validateImportedPhoto, type ImportedPhoto } from '../domain/inbox';
 import type { ProviderId } from '../gateway/providers';
 export type AssetRow = ImportedPhoto & { registered_at: number | null; basis: 'APP_REGISTERED' | 'FIRST_OBSERVED'; already_shared: number };
@@ -18,7 +18,7 @@ export async function registerPhotos(photos: ImportedPhoto[], recovered = false)
   return added;
 }
 export async function listAssets(provider: ProviderId): Promise<AssetRow[]> {
-  return (await database()).getAllAsync<AssetRow>(INBOX_QUERY, provider);
+  return (await database()).getAllAsync<AssetRow>(ACTIVE_INBOX_QUERY, provider);
 }
 export async function saveCaption(caption: string): Promise<void> {
   if (caption.length > 2200 || caption.includes('\0')) throw new Error('INVALID_CAPTION');

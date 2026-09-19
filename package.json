@@ -12,7 +12,7 @@
     "ios": "expo run:ios",
     "lint": "eslint app src modules tests index.ts App.tsx app.config.ts",
     "typecheck": "tsc --noEmit",
-    "test": "node --experimental-strip-types --test tests/*.test.mjs",
+    "test": "node --experimental-vm-modules --experimental-strip-types --test tests/*.test.mjs",
     "check": "npm run lint && npm run typecheck && npm test",
     "bundle": "expo export --platform all --output-dir dist",
     "prebuild": "expo prebuild --no-install"

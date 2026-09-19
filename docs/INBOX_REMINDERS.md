@@ -1,3 +1,5 @@
+> 이 문서는 f5dfbe9 후보의 기록입니다. 이후 소스연결·날짜/revision·삭제 구현과 제한은 [LIFECYCLE.md](LIFECYCLE.md)를 따릅니다. 과거 미구현 표기를 최신 상태로 오인하지 마세요.
+
 # 로컬 게시함·알림 구현 기록 / 2026-09-19
 
 작성자 MITCHELL. 승인된 SNSG-WORK-001의 SG-00/01 이후 독립 구현 범위를 진행한다. 현재는 LOCAL_INBOX_REMINDER_CANDIDATE이며 전체 v0.1 완성이 아니다. 실제 코드 변경과 자동 검사·native 빌드·기기 사용은 별도로 보고한다.

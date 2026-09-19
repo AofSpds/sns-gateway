@@ -1,14 +1,15 @@
-# 로컬 개인정보 경계 — 첫 공유 시험 후보
+# 로컬 개인정보 경계
 
-현재 후보는 개인 사진을 읽지 않습니다. 앱이 합성 JPEG를 생성하며 사진 접근 권한, SNS 계정 인증, 외부 중계 서버는 없습니다.
+현재 앱은 사용자가 선택한 사진 및 연결한 로컬 폴더/앨범을 읽고 앱 내부에 공유용 JPEG 사본을 만든다. 첫 SG-01의 합성사진 전용 설명은 과거 범위다. 외부 서버·사진 스토리지·SNS OAuth·분석/광고 SDK·원격 Push·API 키는 없다.
 
-- Android의 SQLite는 noBackupFilesDir 하위, iOS는 백업 제외 처리한 Application Support 하위에 저장합니다.
-- 공유용 합성 JPEG는 앱 cache 하위 고유 디렉터리에 있습니다. 현재 파일 정리·용량 관리 기능은 없습니다. OS가 cache를 지우면 다시 생성해야 합니다.
-- Android FileProvider는 `cache/sns-gateway/share/` 하위만 읽기 권한으로 제공합니다. 일반 저장소·DB·쓰기 권한을 공개하지 않습니다.
-- iOS는 공유 URL의 canonical 경로와 JPEG 형식을 확인합니다. clipboard는 사용자 동작으로만 쓰고 localOnly와 5분 만료를 지정합니다.
-- Android clipboard는 민감 플래그를 지정하지만 제조사의 기기간 복사 설정까지 제어한다고 보장하지 않습니다.
-- 배포용 기본 설정에서 Android INTERNET 권한을 제거하고 OTA 업데이트를 비활성화합니다. iOS ATS 설정은 모든 HTTPS를 차단하는 방화벽이 아닙니다. 앱 코드의 HTTP 호출 부재와 실제 실행시 외부 통신 부재는 다른 시험입니다.
-- 개발 중 npm/Metro/CI 네트워크와 합성 시험은 개인 사진을 다루는 배포 앱의 경계와 구분합니다.
-- SNS에 공유한 이후 수신 앱의 임시 업로드·저장·공개는 Gateway가 통제하지 않습니다.
+원본은 읽기 전용이다. 사본은 방향 반영/크기 제한 후 생성하며 원본 EXIF/GPS를 전달하지 않는 경로를 사용한다. 실제 다양한 사진 형식·메타데이터 수락은 실기 시험으로 남는다. iCloud-only를 내려받기 위해 PhotoKit 네트워크 옵션을 켜지 않는다.
 
-시험 상태: 네이티브 코드/설정 정적 검사 및 SQLite fixture와 실기 검사를 구분합니다. 실제 개인정보 사진의 metadata 제거·원본 보존·OS 백업 복구 시험은 아직 수행하지 않았습니다. 이번 합성 사진의 생성이 향후 실제 사진 변환 검증을 대신하지 않습니다.
+Android SQLite/게시함은 noBackupFilesDir, iOS Application Support는 백업 제외 속성을 사용한다. 소스locator와 알림 날짜는 기기 내부 설정/백업 제외 파일에 둔다. 공유 staging은 cache 하위이며 FileProvider는 해당 하위만 읽기 권한으로 제공한다. DB/원본/쓰기 권한을 공유하지 않는다.
+
+보존·삭제는 LIFECYCLE.md의 닫힌 날짜·미확인 공유 보호·7일 유예·삭제 journal 계약을 따른다. native는 canonical 허용 경로와 파일명만 삭제한다. 초기화는 사용자 확인 후 앱 데이터만 처리한다. 동일사진 tombstone과 미확인 이력을 보존해 자동 재공유를 막는다. 초기화/재설치 뒤에는 이력이 없어져 전역 중복 방지를 보장하지 않는다.
+
+Android 기본 release의 INTERNET 권한은 제거한다. iOS ATS는 HTTPS 방화벽이 아니므로 코드상 HTTP 호출 부재와 실기 통신 부재는 다른 검사다. 로컬 앱은 OTA/외부 crash 수집을 사용하지 않는다. 개발의 npm/Metro/CI 네트워크는 배포 앱의 사진 처리와 구분한다.
+
+문구 복사는 사용자 조작으로만 한다. iOS localOnly/5분 만료, Android 민감 clipboard 표시를 사용하되 사용자의 갤러리 원본 백업·제조사 기기간 복사·수신 SNS 앱의 임시 업로드를 제어한다고 주장하지 않는다. SNS 앱에 넘긴 이후의 네트워크·공개는 그 앱이 처리한다.
+
+실제 사진·경로·토큰·원본 로그를 공개 Git/CI에 넣지 않는다. 시험에는 합성 fixture만 사용한다. 실기 백업/메타데이터/권한 수락과 독립 IVA는 별도 미실행이다.

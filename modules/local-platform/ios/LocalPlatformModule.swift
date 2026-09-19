@@ -6,6 +6,7 @@ import PhotosUI
 
 public class LocalPlatformModule: Module {
   private var sharing = false
+  private var sourcePickerOpen = false
   private var photoPicker: LocalPhotoPicker?
 
   private func root() throws -> URL {
@@ -42,7 +43,7 @@ public class LocalPlatformModule: Module {
     Name("LocalPlatform")
 
     AsyncFunction("pickPhotos") { (promise: Promise) in
-      guard self.photoPicker == nil, UIApplication.shared.applicationState == .active, let presenter = self.presenter() else {
+      guard !self.sourcePickerOpen, self.photoPicker == nil, UIApplication.shared.applicationState == .active, let presenter = self.presenter() else {
         promise.reject("FOREGROUND_REQUIRED", "Open the app before choosing photos."); return
       }
       PHPhotoLibrary.requestAuthorization(for: .readWrite) { status in
@@ -60,6 +61,24 @@ public class LocalPlatformModule: Module {
         }
       }
     }.runOnQueue(.main)
+    AsyncFunction("connectSource") { (promise: Promise) in
+      guard !self.sourcePickerOpen, self.photoPicker == nil, UIApplication.shared.applicationState == .active, let presenter = self.presenter() else {
+        promise.reject("FOREGROUND_REQUIRED", "Open the app before selecting an album."); return
+      }
+      self.sourcePickerOpen = true
+      LocalSources.choose(presenter: presenter) { result, error in
+        self.sourcePickerOpen = false
+        if error != nil { promise.reject("SOURCE_UNAVAILABLE", "Allow full album access or use the photo inbox; choose an album with at most 2000 photos.") }
+        else { promise.resolve(result) }
+      }
+    }.runOnQueue(.main)
+    AsyncFunction("scanSource") { () throws -> [String: Any]? in try LocalSources.scan() }
+    AsyncFunction("importSource") { (id: String, keys: [String]) throws -> [String: Any] in try LocalSources.importSelected(id, keys) }
+    AsyncFunction("disconnectSource") { () throws in try LocalSources.disconnect() }
+    AsyncFunction("managedFiles") { () throws -> [[String: Any]] in try LocalManagedFiles.inventory() }
+    AsyncFunction("deleteManagedFiles") { (uris: [String]) throws -> [String] in try LocalManagedFiles.delete(uris) }
+    AsyncFunction("pendingReminder") { () throws -> [String: String]? in try ReminderDelegate.pending() }
+    AsyncFunction("acknowledgeReminder") { (token: String) throws in try ReminderDelegate.acknowledge(token) }
     AsyncFunction("inventoryPhotos") { () throws -> [[String: Any]] in try LocalPhotoPicker.inventory() }
     AsyncFunction("stagePhotos") { (paths: [String]) throws -> [String] in try LocalPhotoPicker.stage(paths) }
     AsyncFunction("reminderStatus") { (promise: Promise) in LocalReminders.status { promise.resolve($0) } }
@@ -89,6 +108,7 @@ public class LocalPlatformModule: Module {
 
     AsyncFunction("makeFixtures") { (count: Int) throws -> [[String: String]] in
       guard count == 1 || count == 3 else { throw NSError(domain: "LocalPlatform", code: 3) }
+      try LocalManagedFiles.requireSpace(count * 1_048_576)
       let folder = try self.root().appendingPathComponent(UUID().uuidString, isDirectory: true)
       try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
       return try (1...count).map { index in

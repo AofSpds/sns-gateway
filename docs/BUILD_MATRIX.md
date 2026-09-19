@@ -10,7 +10,7 @@ Expo 57.0.24 / React Native 0.86.3 / React 19.2.3 / expo-dev-client 57.0.19 / ex
 
 | 실행 | 목적 | 뜻하지 않는 것 |
 |---|---|---|
-| npm run check | lint/typecheck/48 Node·SQLite·정적 계약 시험 | native 코드 컴파일·실제 기기 통과 |
+| npm run check | lint/typecheck/Node·SQLite·정적 계약 시험 (현재 개수는 완료보고) | native 코드 컴파일·실제 기기 통과 |
 | expo install --check | 설치된 SDK의 의존성 호환성 검사 | SNS 앱 수신 호환성 |
 | npm run bundle | Android/iOS JS·asset 번들 생성 | 폰 설치 성공 |
 | Android assembleRelease | unsigned release 컴파일, JS 번들 포함, INTERNET 권한 검사 | 서명된 배포 APK·갤럭시 설치·실행 |

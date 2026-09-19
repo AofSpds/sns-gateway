@@ -23,6 +23,7 @@ import java.util.UUID
 class LocalPlatformModule : Module() {
   private var pickerPromise: Promise? = null
   private val pickerCode = 59311
+  private val folderCode = 59312
   private fun context(): Context = requireNotNull(appContext.reactContext) { "CONTEXT_UNAVAILABLE" }
   private fun root(): File = File(context().cacheDir, "sns-gateway/share").apply { mkdirs() }.canonicalFile
 
@@ -53,7 +54,40 @@ class LocalPlatformModule : Module() {
       } catch (_: Exception) { pickerPromise = null; promise.reject("PICKER_FAILED", "Open the app and select local photos.", null) }
     }.runOnQueue(Queues.MAIN)
 
+    AsyncFunction("connectSource") { promise: Promise ->
+      try {
+        check(pickerPromise == null) { "PICKER_BUSY" }
+        val activity = requireNotNull(appContext.currentActivity)
+        pickerPromise = promise
+        activity.startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+          putExtra(Intent.EXTRA_LOCAL_ONLY, true)
+          addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION)
+        }, folderCode)
+      } catch (_: Exception) { pickerPromise = null; promise.reject("SOURCE_PICKER_FAILED", "Select a local folder.", null) }
+    }.runOnQueue(Queues.MAIN)
+    AsyncFunction("scanSource") { LocalSources(context()).scan() }
+    AsyncFunction("importSource") { id: String, keys: List<String> -> LocalSources(context()).importSelected(id, keys) }
+    AsyncFunction("disconnectSource") { LocalSources(context()).disconnect() }
+    AsyncFunction("managedFiles") { LocalManagedFiles.inventory(context()) }
+    AsyncFunction("deleteManagedFiles") { uris: List<String> -> LocalManagedFiles.delete(context(), uris) }
+    AsyncFunction("pendingReminder") { LocalReminders.pendingOpen(context(), appContext.currentActivity?.intent) }
+    AsyncFunction("acknowledgeReminder") { token: String -> LocalReminders.acknowledge(context(), token) }
+    OnNewIntent { intent -> LocalReminders.captureOpen(context(), intent) }
+
     OnActivityResult { _, payload ->
+      if (payload.requestCode == folderCode) {
+        val promise = pickerPromise; pickerPromise = null
+        if (promise != null) {
+          if (payload.resultCode != android.app.Activity.RESULT_OK || payload.data == null) promise.resolve(null)
+          else {
+            val ctx = context(); val data = payload.data!!
+            Thread {
+              try { promise.resolve(LocalSources(ctx).connect(data)) }
+              catch (_: Exception) { promise.reject("SOURCE_UNAVAILABLE", "Select a readable local folder with at most 2000 entries.", null) }
+            }.start()
+          }
+        }
+      }
       if (payload.requestCode == pickerCode) {
         val promise = pickerPromise
         pickerPromise = null
@@ -88,6 +122,7 @@ class LocalPlatformModule : Module() {
 
     AsyncFunction("makeFixtures") { count: Int ->
       require(count == 1 || count == 3) { "FIXTURE_COUNT_INVALID" }
+      LocalManagedFiles.requireSpace(context(), count * 1_048_576L)
       val directory = File(root(), UUID.randomUUID().toString()).apply { check(mkdirs()) }
       (1..count).map { index ->
         val bitmap = Bitmap.createBitmap(1080, 1080, Bitmap.Config.ARGB_8888)

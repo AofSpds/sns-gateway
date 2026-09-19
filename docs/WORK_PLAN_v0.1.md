@@ -7,7 +7,13 @@
 
 iPhone/Galaxy 공통 SNS Gateway. 외부 서버/Storage 없음. 최종 게시 수동. SNS OAuth/API 키 대신 OS 공유 API 사용. MITCHELL이 현재 채널에서 직접 구현. PMO NOT_DISPATCHED, IVA NOT_RUN. 새 계정·키·기기 설치·공개 게시·병합·배포는 별도 경계다.
 
-## 단계
+## 후속 구현 현행화 — SNSG-LIFECYCLE-001
+
+사용자가 남은 구현을 진행하도록 지시했다. 현재 MITCHELL이 SG-04 소스연결, SG-05 날짜/revision, SG-06 오래된 알림, SG-03/08 보존·삭제·용량 관리 코드를 추가한다. 기존 실행 범위의 확장이며 서버·API 키·계정·서명·실기·병합·배포 권한은 확대하지 않는다.
+
+아래 표는 첫 코드 후보의 역사적 범위다. 최신 기능 계약은 README와 LIFECYCLE.md, 실제 검사결과는 운영 저장소의 SNS_GATEWAY_LIFECYCLE_COMPLETION_20260919.md를 따른다. 기존 단위시험 PASS를 실기/SNS/IVA 완료로 승격하지 않는다.
+
+## 최초 단계 표
 
 | ID | 작업 | 첫 코드 후보의 범위 |
 |---|---|---|

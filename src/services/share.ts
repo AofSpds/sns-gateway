@@ -4,7 +4,7 @@ import { SingleFlight, captionText, validateLocalUris } from '../domain/sharing'
 import type { ProviderId } from '../gateway/providers';
 import { recordRequest, recordNativeResult, recordError } from '../storage/history';
 const flight = new SingleFlight();
-export async function shareFixtures(provider: ProviderId, uris: string[], caption: string, assetIds?: string[]) {
+export async function shareFixtures(provider: ProviderId, uris: string[], caption: string, assetIds?: string[], day?: {serviceDate: string; revision: number}) {
   return flight.run(async () => {
     if (AppState.currentState !== 'active') throw new Error('FOREGROUND_REQUIRED');
     validateLocalUris(uris);
@@ -13,7 +13,7 @@ export async function shareFixtures(provider: ProviderId, uris: string[], captio
     // Persist before handing off: losing a callback must not imply failure or repost.
     // Immutable copies remain available while the receiving app reads them.
     const staged = assetIds ? await platformBridge().stagePhotos(uris) : uris;
-    await recordRequest(id, provider, staged, caption, assetIds);
+    await recordRequest(id, provider, staged, caption, assetIds, day);
     let result;
     try { result = await platformBridge().shareFiles(staged, caption); }
     catch {

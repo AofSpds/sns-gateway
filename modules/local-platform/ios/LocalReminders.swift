@@ -23,6 +23,8 @@ final class LocalReminders {
     guard (0...23).contains(hour), (0...59).contains(minute) else { done(nil, NSError(domain: "Reminder", code: 1)); return }
     if !enabled {
       center.removePendingNotificationRequests(withIdentifiers: [daily, test])
+      center.removeDeliveredNotifications(withIdentifiers: [daily, test])
+      if let pending = try? ReminderDelegate.pending(), let token = pending["token"] { try? ReminderDelegate.acknowledge(token) }
       status { done($0, nil) }; return
     }
     center.requestAuthorization(options: [.alert, .sound]) { granted, error in

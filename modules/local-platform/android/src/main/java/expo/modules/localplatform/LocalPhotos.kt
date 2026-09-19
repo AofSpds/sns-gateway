@@ -46,8 +46,7 @@ internal class LocalPhotos(private val context: Context) {
         require(bytes.size in 3..10485760)
         val file = File(root(), hash(bytes) + ".jpg")
         if (!file.exists()) {
-          val used = root().listFiles().orEmpty().sumOf { it.length() }
-          require(used + bytes.size <= 524_288_000) { "INBOX_FULL" }
+          LocalManagedFiles.requireSpace(context, bytes.size.toLong())
           val temporary = File(root(), UUID.randomUUID().toString() + ".tmp")
           try { temporary.writeBytes(bytes); check(temporary.renameTo(file)) } finally { temporary.delete() }
         }
@@ -68,6 +67,7 @@ internal class LocalPhotos(private val context: Context) {
       require(hash(file.readBytes()) == file.nameWithoutExtension)
       file
     }
+    LocalManagedFiles.requireSpace(context, files.sumOf { it.length() })
     val destination = File(context.cacheDir, "sns-gateway/share/" + UUID.randomUUID()).apply { check(mkdirs()) }
     // All selected files are validated before any share intent is opened.
     return files.mapIndexed { i, file -> file.copyTo(File(destination, "$i.jpg")).toURI().toString() }

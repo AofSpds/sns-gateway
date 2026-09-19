@@ -12,6 +12,11 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import java.util.Calendar
 import java.util.TimeZone
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.UUID
+import android.net.Uri
 
 internal object LocalReminders {
   private const val CHANNEL = "snsg-daily"
@@ -19,8 +24,8 @@ internal object LocalReminders {
   private const val TEST = "com.aofspds.snsgateway.TEST"
   private fun prefs(c: Context) = c.getSharedPreferences("snsg-reminder", Context.MODE_PRIVATE)
   private fun manager(c: Context) = c.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-  private fun pending(c: Context, test: Boolean) = PendingIntent.getBroadcast(c, if (test) 92 else 91,
-    Intent(c, ReminderReceiver::class.java).setAction(if (test) TEST else DAILY), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+  private fun pending(c: Context, test: Boolean, at: Long = 0) = PendingIntent.getBroadcast(c, if (test) 92 else 91,
+    Intent(c, ReminderReceiver::class.java).setAction(if (test) TEST else DAILY).putExtra("snsg_due", at), PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
   private fun permitted(c: Context): Boolean {
     val nm = c.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     nm.createNotificationChannel(NotificationChannel(CHANNEL, "사진 공유 알림", NotificationManager.IMPORTANCE_DEFAULT))
@@ -35,7 +40,7 @@ internal object LocalReminders {
   }
   private fun schedule(c: Context, whenAt: Long, test: Boolean) {
     // Inexact by design: no restricted exact-alarm permission and no background activity launch.
-    manager(c).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenAt, pending(c, test))
+    manager(c).setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, whenAt, pending(c, test, whenAt))
   }
   fun status(c: Context): Map<String, Any?> {
     val p = prefs(c); val enabled = p.getBoolean("enabled", false)
@@ -47,6 +52,10 @@ internal object LocalReminders {
     manager(c).cancel(pending(c, false))
     manager(c).cancel(pending(c, true))
     val actual = enabled && permitted(c)
+    if (!enabled) {
+      NotificationManagerCompat.from(c).cancel(91)
+      prefs(c).edit().putString("acknowledged", prefs(c).getString("open_token", "")).remove("open_token").remove("open_date").apply()
+    }
     val at = if (actual) next(hour, minute) else 0
     // Record intent first; scheduling errors are returned and never shown as ready.
     check(prefs(c).edit().putBoolean("enabled", false).putInt("hour", hour).putInt("minute", minute).putLong("next", 0).commit())
@@ -64,14 +73,34 @@ internal object LocalReminders {
       schedule(c, at, false); p.edit().putLong("next", at).apply()
     }
   }
+  fun captureOpen(c: Context, intent: Intent?) {
+    val token = intent?.getStringExtra("snsg_open_token") ?: return
+    val date = intent.getStringExtra("snsg_open_date") ?: return
+    if (!token.matches(Regex("[a-fA-F0-9-]{36}")) || !date.matches(Regex("[0-9]{4}-[0-9]{2}-[0-9]{2}")) || token == prefs(c).getString("acknowledged", "")) return
+    prefs(c).edit().putString("open_token", token).putString("open_date", date).putString("open_basis", intent.getStringExtra("snsg_open_basis") ?: "DELIVERY_DATE").commit()
+  }
+  fun pendingOpen(c: Context, intent: Intent?): Map<String, String>? {
+    if (prefs(c).getString("open_token", null) == null) captureOpen(c, intent)
+    val token = prefs(c).getString("open_token", null) ?: return null
+    return mapOf("token" to token, "serviceDate" to (prefs(c).getString("open_date", "") ?: ""), "basis" to (prefs(c).getString("open_basis", "DELIVERY_DATE") ?: "DELIVERY_DATE"))
+  }
+  fun acknowledge(c: Context, token: String) {
+    if (token == prefs(c).getString("open_token", null)) check(prefs(c).edit().putString("acknowledged", token).remove("open_token").remove("open_date").commit())
+  }
   fun receive(c: Context, intent: Intent) {
     when (intent.action) {
       DAILY, TEST -> {
         if (intent.action == DAILY && !prefs(c).getBoolean("enabled", false)) return
+        val due = intent.getLongExtra("snsg_due", 0)
         if (intent.action == DAILY) refresh(c)
         if (!permitted(c)) return
         val launch = c.packageManager.getLaunchIntentForPackage(c.packageName) ?: return
         launch.addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP)
+        val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply { timeZone = TimeZone.getTimeZone("Asia/Seoul") }
+        val date = formatter.format(Date(if (due > 0) due else System.currentTimeMillis()))
+        val token = UUID.randomUUID().toString()
+        launch.putExtra("snsg_open_date", date).putExtra("snsg_open_token", token).putExtra("snsg_open_basis", if (due > 0) "SCHEDULED_DATE" else "DELIVERY_DATE")
+        launch.data = Uri.parse("snsgateway-reminder://local/" + token)
         val open = PendingIntent.getActivity(c, 93, launch, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val notification = NotificationCompat.Builder(c, CHANNEL).setSmallIcon(android.R.drawable.ic_menu_gallery)
           .setContentTitle("SNS Gateway").setContentText("오늘 사진을 확인하고 공유하세요.")

@@ -99,6 +99,10 @@ jobs:
         with: { node-version: '22.16.0', cache: npm }
       - run: npm ci --ignore-scripts
       - run: xcodebuild -version
+      - name: Exact Swift managed-file guard fixtures (not device acceptance)
+        run: |
+          swiftc modules/local-platform/ios/LocalManagedFiles.swift tests/native/ManagedFilesSmoke.swift -o /tmp/snsg-file-guards
+          /tmp/snsg-file-guards
       - run: npx expo prebuild --platform ios --no-install
       - run: cd ios && pod install
       - name: Unsigned simulator compile (no Apple account)
