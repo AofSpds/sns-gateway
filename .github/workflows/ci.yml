@@ -1,0 +1,119 @@
+name: SNS Gateway author checks
+on:
+  push:
+    branches: ['work/sns-gateway-v0.1']
+    paths-ignore: ['docs/**', 'README.md', 'AGENTS.md', 'CLAUDE.md']
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: snsg-check-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  EXPO_NO_TELEMETRY: '1'
+  CI: '1'
+  NPM_CONFIG_IGNORE_SCRIPTS: 'true'
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22.16.0'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - run: npx expo install --check
+      - run: npm run bundle
+      - name: Package exact source and installed version evidence
+        if: always()
+        run: |
+          mkdir -p artifacts
+          git archive --format=zip --output=artifacts/sns-gateway-source.zip HEAD
+          git rev-parse HEAD > artifacts/COMMIT.txt
+          git rev-parse 'HEAD^{tree}' > artifacts/TREE.txt
+          node --version > artifacts/NODE.txt
+          sha256sum artifacts/sns-gateway-source.zip > artifacts/SHA256SUMS.txt
+          test ! -d node_modules || npm ls --depth=0 > artifacts/DEPENDENCIES.txt || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: source-and-author-evidence
+          path: artifacts/
+          retention-days: 14
+  android:
+    needs: checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with: { node-version: '22.16.0', cache: npm }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - run: npm ci --ignore-scripts
+      - run: npx expo prebuild --platform android --no-install
+      - name: Unsigned release build with bundled JS (not device installation)
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          p = Path('android/app/build.gradle')
+          s = p.read_text()
+          if 'signingConfig signingConfigs.debug' not in s:
+              raise SystemExit('Review generated signing configuration before building')
+          p.write_text(s.replace('signingConfig signingConfigs.debug', '// Unsigned author candidate'))
+          PYTHON
+          cd android
+          ./gradlew :app:assembleRelease --no-daemon -Dorg.gradle.jvmargs=-Xmx3g
+      - name: Verify release manifest has no Internet permission
+        run: |
+          python3 - <<'PYTHON'
+          from pathlib import Path
+          candidates = list(Path('android/app/build/intermediates').glob('merged_manifests/release/**/AndroidManifest.xml'))
+          if not candidates: raise SystemExit('No merged release manifest found')
+          for p in candidates:
+              text=p.read_text()
+              if 'android.permission.INTERNET' in text: raise SystemExit('Unexpected INTERNET permission')
+          PYTHON
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-unsigned-release-candidate
+          path: android/app/build/outputs/apk/release/*.apk
+          retention-days: 7
+  ios-simulator:
+    needs: checks
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with: { node-version: '22.16.0', cache: npm }
+      - run: npm ci --ignore-scripts
+      - run: xcodebuild -version
+      - run: npx expo prebuild --platform ios --no-install
+      - run: cd ios && pod install
+      - name: Unsigned simulator compile (no Apple account)
+        run: |
+          workspace=$(find ios -maxdepth 1 -name '*.xcworkspace' | head -1)
+          scheme=$(basename "$workspace" .xcworkspace)
+          xcodebuild -workspace "$workspace" -scheme "$scheme" -configuration Release -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -derivedDataPath /tmp/snsg-derived CODE_SIGNING_ALLOWED=NO build
+      - name: Package simulator application (not iPhone-installable IPA)
+        run: |
+          mkdir -p artifacts
+          app=$(find /tmp/snsg-derived/Build/Products/Release-iphonesimulator -maxdepth 1 -name '*.app' | head -1)
+          test -n "$app"
+          ditto -c -k --sequesterRsrc --keepParent "$app" artifacts/ios-simulator-app.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ios-simulator-candidate
+          path: artifacts/ios-simulator-app.zip
+          retention-days: 7
